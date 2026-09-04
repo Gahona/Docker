@@ -1,16 +1,26 @@
 from abc import ABC, abstractmethod
+from decimal import Decimal
 import requests
 import asyncio
 import httpx
 
+PRICE_PER_1K_PROMPT_TOKENS = Decimal("0.0015")
+PRICE_PER_1K_COMPLETION_TOKENS = Decimal("0.0020")
+
+
+def calcular_coste(prompt_tokens: int, completion_tokens: int) -> Decimal:
+    coste_prompt = (Decimal(prompt_tokens) / Decimal(1000)) * PRICE_PER_1K_PROMPT_TOKENS
+    coste_completion = (Decimal(completion_tokens) / Decimal(1000)) * PRICE_PER_1K_COMPLETION_TOKENS
+    return round(coste_prompt + coste_completion, 6)
+
 
 class ServicioLLM(ABC):
     @abstractmethod
-    def generar_respuesta(self, messages: list[dict]) -> str:
+    def generar_respuesta(self, messages: list[dict]) -> dict:
         raise NotImplementedError
 
     @abstractmethod
-    async def generar_respuesta_async(self, messages: list[dict]) -> str:
+    async def generar_respuesta_async(self, messages: list[dict]) -> dict:
         raise NotImplementedError
 
     @abstractmethod
@@ -40,15 +50,25 @@ class ClientEactda:
             "max_tokens": max_tokens,
         }
 
-    def chat(self, messages: list[dict], temperature: float = 0.4, max_tokens: int = 150) -> str:
+    def _extraer_respuesta_y_usage(self, data: dict) -> dict:
+        texto = data["choices"][0]["message"]["content"]
+        usage = data.get("usage", {})
+        
+        return {
+            "respuesta": texto,
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        }
+
+    def chat(self, messages: list[dict], temperature: float = 0.4, max_tokens: int = 150) -> dict:
         url = f"{self.base_url}/chat/completions"
         payload = self._payload(messages, temperature, max_tokens)
         response = requests.post(url, json=payload, timeout=self.timeout)
         response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+        return self._extraer_respuesta_y_usage(response.json())
 
-    async def chat_async(self, messages: list[dict], temperature: float = 0.4, max_tokens: int = 150) -> str:
+    async def chat_async(self, messages: list[dict], temperature: float = 0.4, max_tokens: int = 150) -> dict:
         url = f"{self.base_url}/chat/completions"
         payload = self._payload(messages, temperature, max_tokens)
 
@@ -60,8 +80,7 @@ class ClientEactda:
                 try:
                     response = await client.post(url, json=payload)
                     response.raise_for_status()
-                    data = response.json()
-                    return data["choices"][0]["message"]["content"]
+                    return self._extraer_respuesta_y_usage(response.json())
                 except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as exc:
                     ultimo_error = exc
                     if intento == self.max_intentos:
@@ -76,10 +95,10 @@ class EactdaLLMService(ServicioLLM):
     def __init__(self, base_url: str = "http://192.168.1.147:1234/v1", model: str = "qwen2.5-7b-instruct"):
         self.client = ClientEactda(base_url=base_url, model=model)
 
-    def generar_respuesta(self, messages: list[dict]) -> str:
+    def generar_respuesta(self, messages: list[dict]) -> dict:
         return self.client.chat(messages)
 
-    async def generar_respuesta_async(self, messages: list[dict]) -> str:
+    async def generar_respuesta_async(self, messages: list[dict]) -> dict:
         return await self.client.chat_async(messages)
 
     async def generar_respuesta_stream(self, messages: list[dict]):
@@ -91,12 +110,24 @@ class MockServicioLLM(ServicioLLM):
     def __init__(self, respuesta_corregidas: str = "Esta es una respuesta simulada."):
         self.respuesta_corregidas = respuesta_corregidas
 
-    def generar_respuesta(self, messages: list[dict]) -> str:
-        return self.respuesta_corregidas
+    def _construir_mock_payload(self, messages: list[dict]) -> dict:
+        total_prompt_chars = sum(len(m.get("content", "")) for m in messages)
+        prompt_tokens = max(1, total_prompt_chars // 4)
+        completion_tokens = max(1, len(self.respuesta_corregidas) // 4)
+        
+        return {
+            "respuesta": self.respuesta_corregidas,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        }
 
-    async def generar_respuesta_async(self, messages: list[dict]) -> str:
+    def generar_respuesta(self, messages: list[dict]) -> dict:
+        return self._construir_mock_payload(messages)
+
+    async def generar_respuesta_async(self, messages: list[dict]) -> dict:
         await asyncio.sleep(0)
-        return self.respuesta_corregidas
+        return self._construir_mock_payload(messages)
 
     async def generar_respuesta_stream(self, messages: list[dict]):
         palabras = self.respuesta_corregidas.split(" ")
