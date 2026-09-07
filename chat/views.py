@@ -10,7 +10,7 @@ from rest_framework.throttling import UserRateThrottle
 from .models import Conversation, Message, UsageLog
 from .serializers import ConversationSerializer, MessageSerializer
 from services.llm import get_servicio_llm, calcular_coste
-from chat.schemas import UsageSummarySchema
+from .serializers import UsageSchema
 
 
 class MessageRateThrottle(UserRateThrottle):
@@ -139,7 +139,7 @@ class MessageStreamView(APIView):
         return response
 
 
-class UsageSummaryView(APIView):
+class UsageView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -150,13 +150,14 @@ class UsageSummaryView(APIView):
             t_cost=Sum('cost_usd')
         )
 
-        data = UsageSummarySchema(
-            user_id=request.user.id,
-            username=request.user.username,
-            total_prompt_tokens=resumen['t_prompt'] or 0,
-            total_completion_tokens=resumen['t_completion'] or 0,
-            total_tokens=resumen['t_total'] or 0,
-            total_cost_usd=resumen['t_cost'] or Decimal("0.000000")
-        )
+        data = {
+            "user_id": request.user.id,
+            "username": request.user.username,
+            "total_prompt_tokens": resumen['t_prompt'] or 0,
+            "total_completion_tokens": resumen['t_completion'] or 0,
+            "total_tokens": resumen['t_total'] or 0,
+            "total_cost_usd": resumen['t_cost'] or Decimal("0.000000"),
+        }
 
-        return Response(data.model_dump())
+        serializer = UsageSchema(data)
+        return Response(serializer.data)
