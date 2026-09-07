@@ -139,7 +139,7 @@ class MessageStreamView(APIView):
         return response
 
 
-class UsageView(APIView):
+class UsageSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
