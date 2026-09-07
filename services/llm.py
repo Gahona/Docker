@@ -32,9 +32,9 @@ class ServicioLLM(ABC):
 class ClientEactda:
     def __init__(
             self,
-            base_url: str = "http://192.168.1.147:1234/v1",
-            model: str = "qwen2.5-7b-instruct",
-            timeout: float = 30.0,
+            base_url: str = "http://localhost:11434/v1",
+            model: str = "llama3.2",
+            timeout: float = 60.0,
             max_intentos: int = 3,
     ):
         self.base_url = base_url.rstrip("/")
@@ -92,7 +92,7 @@ class ClientEactda:
 
 
 class EactdaLLMService(ServicioLLM):
-    def __init__(self, base_url: str = "http://192.168.1.147:1234/v1", model: str = "qwen2.5-7b-instruct"):
+    def __init__(self, base_url: str = "http://localhost:11434/v1", model: str = "llama3.2"):
         self.client = ClientEactda(base_url=base_url, model=model)
 
     def generar_respuesta(self, messages: list[dict]) -> dict:
@@ -137,7 +137,7 @@ class MockServicioLLM(ServicioLLM):
 
 
 def get_servicio_llm() -> ServicioLLM:
-    USE_MOCK = True
+    USE_MOCK = False
 
     if USE_MOCK:
         return MockServicioLLM()
